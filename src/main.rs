@@ -6,6 +6,7 @@ use tide::Endpoint;
 use tide::Request;
 use tide::Response;
 use tide::StatusCode;
+use anyhow::{Context, Result};
 
 use std::ffi::OsStr;
 
@@ -217,7 +218,7 @@ impl Endpoint<()> for Route {
 
 #[async_std::main]
 async fn main() -> tide::Result<()> {
-    let config = std::fs::read_to_string("github.toml")?;
+    let config = std::fs::read_to_string("github.toml").with_context(|| format!("Unable to load github.toml"))?;
     let config: Config = toml::from_str(&config)?;
 
     // TODO: Consolidate repos with the same route - they should be OK
