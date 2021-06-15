@@ -218,8 +218,10 @@ impl Endpoint<()> for Route {
 
 #[async_std::main]
 async fn main() -> tide::Result<()> {
-    let config = std::fs::read_to_string("github.toml").with_context(|| format!("Unable to load github.toml"))?;
-    let config: Config = toml::from_str(&config)?;
+
+    let config_file = std::env::args().nth(1).expect("no config argument");
+    let config = std::fs::read_to_string(&config_file).with_context(|| format!("Unable to load {}", config_file))?;
+    let config: Config = toml::from_str(&config).with_context(|| format!("Unable to parse config file {}", config_file))?;
 
     // TODO: Consolidate repos with the same route - they should be OK
     //       we can differentiate them based on what github returns in the
