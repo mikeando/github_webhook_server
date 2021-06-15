@@ -1,0 +1,23 @@
+{
+    "added": [],
+    "author": {
+        "email": "author@somewhere.com",
+        "name": "Someone McSomebody",
+        "username": "someone"
+    },
+    "committer": {
+        "email": "author@somewhere.com",
+        "name": "Someone McSomebody",
+        "username": "someone"
+    },
+    "distinct": true,
+    "id": "deadbeef01234567823deadbeef012345678eeeeee",
+    "message": "Some exciting commit message",
+    "modified": [
+        "a_directory/a_file.md"
+    ],
+    "removed": [],
+    "timestamp": "2021-06-13T10:20:39+08:00",
+    "tree_id": "deadbeef01234567823deadbeef012345678eeeeee",
+    "url": "https://github.com/someone/somerepo/commit/deadbeef01234567823deadbeef012345678eeeeee"
+}

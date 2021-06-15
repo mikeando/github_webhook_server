@@ -1,0 +1,20 @@
+{
+    "avatar_url": "https://avatars.githubusercontent.com/u/46179?v=4",
+    "events_url": "https://api.github.com/users/someone/events{/privacy}",
+    "followers_url": "https://api.github.com/users/someone/followers",
+    "following_url": "https://api.github.com/users/someone/following{/other_user}",
+    "gists_url": "https://api.github.com/users/someone/gists{/gist_id}",
+    "gravatar_id": "",
+    "html_url": "https://github.com/someone",
+    "id": 46179,
+    "login": "someone",
+    "node_id": "AAAAAaaaaaa06=",
+    "organizations_url": "https://api.github.com/users/someone/orgs",
+    "received_events_url": "https://api.github.com/users/someone/received_events",
+    "repos_url": "https://api.github.com/users/someone/repos",
+    "site_admin": false,
+    "starred_url": "https://api.github.com/users/someone/starred{/owner}{/repo}",
+    "subscriptions_url": "https://api.github.com/users/someone/subscriptions",
+    "type": "User",
+    "url": "https://api.github.com/users/someone"
+}
