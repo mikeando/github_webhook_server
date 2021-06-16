@@ -52,12 +52,6 @@ struct SimpleLog {
     content: String,
 }
 
-#[derive(Clone, Copy, Debug)]
-enum LogLevel {
-    Info,
-    Error,
-}
-
 impl SimpleLog {
     fn add_entry(&mut self, prefix: &str, s: &str) {
         use std::fmt::Write;
@@ -69,13 +63,6 @@ impl SimpleLog {
             } else {
                 write!(self.content, "{}: {}:|:{}\n", timestamp, prefix, l).unwrap();
             }
-        }
-    }
-
-    pub fn log<S: AsRef<str>>(&mut self, level: LogLevel, s: S) {
-        match level {
-            LogLevel::Info => self.info(s),
-            LogLevel::Error => self.error(s),
         }
     }
 
