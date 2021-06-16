@@ -1,3 +1,4 @@
+use anyhow::{Context, Result};
 use async_trait::async_trait;
 use git::CommandOutput;
 use git::GitRepositoryError;
@@ -6,8 +7,8 @@ use tide::Endpoint;
 use tide::Request;
 use tide::Response;
 use tide::StatusCode;
-use anyhow::{Context, Result};
 
+use std::collections::BTreeMap;
 use std::ffi::OsStr;
 
 use crate::git::GitRepository;
@@ -19,10 +20,13 @@ pub mod github;
 #[derive(Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 struct HookConfig {
+    name: String,
+    repo_name: String,
     hook_route: String,
     repository_directory: String,
     script: String,
     branch: String,
+    secret: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -31,14 +35,32 @@ struct Config {
     hooks: Vec<HookConfig>,
 }
 
+#[derive(Debug)]
 pub struct Route {
-    config: HookConfig,
+    route: String,
+    hooks: Vec<HookConfig>,
+}
+
+impl Route {
+    pub fn new(route: String) -> Self {
+        Route {
+            route,
+            hooks: vec![],
+        }
+    }
+
+    fn add_hook(&mut self, hook: HookConfig) {
+        assert!(hook.hook_route == self.route);
+        self.hooks.push(hook);
+    }
 }
 
 #[derive(Debug)]
 pub enum RouteError {
     TideError(tide::Error),
     GitRepositoryError(GitRepositoryError),
+    DecodingError(serde_json::Error),
+    AuthenticationError(String),
 }
 
 impl From<GitRepositoryError> for RouteError {
@@ -101,15 +123,17 @@ fn handle_command_result(
     log: &mut SimpleLog,
 ) -> Result<(), GitRepositoryError> {
     match result {
-        Ok(v) => render_command_output_to_log(log, stage, &v),
+        Ok(v) => {
+            render_command_output_to_log(log, stage, &v);
+            Ok(())
+        }
         Err(v) => {
             render_command_error_to_log(log, stage, &v);
             eprintln!("Error {} - log follows", stage);
             render_log_to_stderr(log);
-            Err(v)?
+            Err(v)
         }
-    };
-    Ok(())
+    }
 }
 
 fn handle_git_command<I, S>(
@@ -137,28 +161,101 @@ fn handle_command(
 
 impl Route {
     pub fn route(&self) -> String {
-        self.config.hook_route.clone()
+        self.route.clone()
+    }
+
+    fn validate_signature(
+        &self,
+        hook: &HookConfig,
+        req: &mut Request<()>,
+        body: &[u8],
+    ) -> Result<(), String> {
+        if let Some(secret) = &hook.secret {
+            // signature = 'sha256=' + OpenSSL::HMAC.hexdigest(OpenSSL::Digest.new('sha256'), ENV['SECRET_TOKEN'], payload_body)
+            // return halt 500, "Signatures didn't match!" unless Rack::Utils.secure_compare(signature, request.env['HTTP_X_HUB_SIGNATURE_256'])
+
+            let signature = req
+                .header("HTTP_X_HUB_SIGNATURE_256")
+                .ok_or_else(|| "Missing HTTP_X_HUB_SIGNATURE_256".to_string())?
+                .last()
+                .as_str();
+
+            let signature = signature.strip_prefix("sha256=").ok_or_else(|| {
+                format!(
+                    "Malformed HTTP_X_HUB_SIGNATURE_256: should start with sha256= but was '{}'",
+                    signature
+                )
+            })?;
+
+            use ring::hmac;
+            let key = hmac::Key::new(hmac::HMAC_SHA256, secret.as_bytes());
+
+            hmac::verify(&key, &body, signature.as_bytes())
+                .map_err(|_| "Invalid message signature".to_string())?;
+
+            // println!("{}", hex::encode(tag.as_ref()));
+        }
+        Ok(())
+    }
+
+    fn hook_for_event(&self, v: &GithubPushEvent) -> Option<&HookConfig> {
+        for hook in &self.hooks {
+            if v.repository.full_name == hook.repo_name
+                && v.reference.0 == format!("refs/heads/{}", hook.branch)
+            {
+                return Some(hook);
+            }
+        }
+        None
     }
 
     pub async fn process_request(&self, req: &mut Request<()>) -> Result<(), RouteError> {
-        let v: tide::Result<GithubPushEvent> = req.body_json().await;
-        let v: GithubPushEvent = match v {
-            Ok(v) => v,
+        // We cant use the body_json method directly as we need to get the raw bytes to check the
+        // secret is correct. But we can't validate the body until we've built the object
+        // since we dont know which hook it corresponds to.
+
+        let body = match req.body_bytes().await {
+            Ok(body) => body,
             Err(e) => {
-                eprintln!("Error decoding GithubPushEvent:\n{:?}\n", e);
+                eprintln!("Error receiving webhook:\n{:?}\n", e);
                 return Err(RouteError::TideError(e));
             }
         };
 
+        let v = serde_json::from_slice(&body);
+        let v: GithubPushEvent = match v {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("Error decoding GithubPushEvent:\n{:?}\n", e);
+                return Err(RouteError::DecodingError(e));
+            }
+        };
         eprintln!("Got GithubPushEvent:\n{:#?}\n", v);
+
+        let hook: &HookConfig = match self.hook_for_event(&v) {
+            Some(v) => v,
+            None => {
+                eprintln!("No valid hook found");
+                return Err(RouteError::AuthenticationError(
+                    "No valid hook found".into(),
+                ));
+            }
+        };
+        eprintln!("Using hook: {}", hook.name);
+
+        if let Err(e) = self.validate_signature(hook, req, &body) {
+            eprintln!("Error validating webhook:\n{:?}\n", e);
+            return Err(RouteError::AuthenticationError(e));
+        }
+
         // TODO: Validate that this event is for the repository we care about
         //       and the branches we care about.
 
         let git = "git";
         let repo = GitRepository {
-            repo_dir: self.config.repository_directory.clone(),
+            repo_dir: hook.repository_directory.clone(),
             git: git.into(),
-            main_branch: self.config.branch.clone(),
+            main_branch: hook.branch.clone(),
         };
 
         let mut log = SimpleLog::default();
@@ -181,7 +278,7 @@ impl Route {
             &mut log,
             &repo,
         )?;
-        handle_command(&self.config.script, "running hook", &mut log, &repo)?;
+        handle_command(&hook.script, "running hook", &mut log, &repo)?;
 
         Ok(())
     }
@@ -205,18 +302,34 @@ impl Endpoint<()> for Route {
 
 #[async_std::main]
 async fn main() -> tide::Result<()> {
-
     let config_file = std::env::args().nth(1).expect("no config argument");
-    let config = std::fs::read_to_string(&config_file).with_context(|| format!("Unable to load {}", config_file))?;
-    let config: Config = toml::from_str(&config).with_context(|| format!("Unable to parse config file {}", config_file))?;
+    let config = std::fs::read_to_string(&config_file)
+        .with_context(|| format!("Unable to load {}", config_file))?;
+    let config: Config = toml::from_str(&config)
+        .with_context(|| format!("Unable to parse config file {}", config_file))?;
+
+    for hook in &config.hooks {
+        if hook.secret.is_none() {
+            eprintln!("WARNING: hook '{}' has no secret specified", hook.name)
+        }
+    }
 
     // TODO: Consolidate repos with the same route - they should be OK
     //       we can differentiate them based on what github returns in the
     //       webhook.
-    let mut app = tide::new();
+
+    let mut routes: BTreeMap<String, Route> = BTreeMap::new();
+
     for hook in config.hooks {
-        println!("Adding hook = {:?}", hook);
-        let route = Route { config: hook };
+        routes
+            .entry(hook.hook_route.clone())
+            .or_insert_with(|| Route::new(hook.hook_route.clone()))
+            .add_hook(hook);
+    }
+
+    let mut app = tide::new();
+    for (_, route) in routes {
+        println!("Adding route = {:?}", route);
         app.at(&route.route()).post(route);
     }
 
