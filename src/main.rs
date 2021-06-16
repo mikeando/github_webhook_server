@@ -59,9 +59,9 @@ impl SimpleLog {
         let timestamp = now.to_rfc3339();
         for (i, l) in s.lines().enumerate() {
             if i == 0 {
-                write!(self.content, "{}: {}:+:{}\n", timestamp, prefix, l).unwrap();
+                writeln!(self.content, "{}: {}:+:{}", timestamp, prefix, l).unwrap();
             } else {
-                write!(self.content, "{}: {}:|:{}\n", timestamp, prefix, l).unwrap();
+                writeln!(self.content, "{}: {}:|:{}", timestamp, prefix, l).unwrap();
             }
         }
     }
