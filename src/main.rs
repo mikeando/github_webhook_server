@@ -175,8 +175,8 @@ impl Route {
             // return halt 500, "Signatures didn't match!" unless Rack::Utils.secure_compare(signature, request.env['HTTP_X_HUB_SIGNATURE_256'])
 
             let signature = req
-                .header("HTTP_X_HUB_SIGNATURE_256")
-                .ok_or_else(|| "Missing HTTP_X_HUB_SIGNATURE_256".to_string())?
+                .header("X-Hub-Signature-256")
+                .ok_or_else(|| "Missing X-Hub-Signature-256 header".to_string())?
                 .last()
                 .as_str();
 
@@ -187,13 +187,26 @@ impl Route {
                 )
             })?;
 
+            println!("Signature from headers is '{}'", signature);
+
+            let signature_bytes = hex::decode(signature).map_err(|_| {
+                format!(
+                    "Malformed X-Hub-Signature-256: should be all hex, but was '{}'",
+                    signature
+                )
+            })?;
+
             use ring::hmac;
             let key = hmac::Key::new(hmac::HMAC_SHA256, secret.as_bytes());
 
-            hmac::verify(&key, &body, signature.as_bytes())
-                .map_err(|_| "Invalid message signature".to_string())?;
+            let tag = hmac::sign(&key, body);
+            println!(
+                "signature from key and body is {}",
+                hex::encode(tag.as_ref())
+            );
 
-            // println!("{}", hex::encode(tag.as_ref()));
+            hmac::verify(&key, &body, &signature_bytes)
+                .map_err(|_| "Invalid message signature".to_string())?;
         }
         Ok(())
     }
