@@ -11,13 +11,16 @@ use tide::StatusCode;
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 
+use std::sync::Mutex;
+use std::sync::mpsc;
+
 use crate::git::GitRepository;
 use crate::github::GithubPushEvent;
 
 pub mod git;
 pub mod github;
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
 struct HookConfig {
     name: String,
@@ -39,13 +42,15 @@ struct Config {
 pub struct Route {
     route: String,
     hooks: Vec<HookConfig>,
+    channel: Mutex<mpsc::Sender<Event>>,
 }
 
 impl Route {
-    pub fn new(route: String) -> Self {
+    pub fn new(route: String, channel: mpsc::Sender<Event>) -> Self {
         Route {
             route,
             hooks: vec![],
+            channel: Mutex::new(channel),
         }
     }
 
@@ -61,6 +66,7 @@ pub enum RouteError {
     GitRepositoryError(GitRepositoryError),
     DecodingError(serde_json::Error),
     AuthenticationError(String),
+    ChannelError,
 }
 
 impl From<GitRepositoryError> for RouteError {
@@ -261,37 +267,18 @@ impl Route {
             return Err(RouteError::AuthenticationError(e));
         }
 
+        self.channel.lock().map_err(|_e| RouteError::ChannelError)?
+            .send(
+                Event::PushEvent( PushEvent{
+                    hook: hook.clone(),
+                    content: v
+                })
+            ).map_err(|_e| RouteError::ChannelError)?;
+
         // TODO: Validate that this event is for the repository we care about
         //       and the branches we care about.
 
-        let git = "git";
-        let repo = GitRepository {
-            repo_dir: hook.repository_directory.clone(),
-            git: git.into(),
-            main_branch: hook.branch.clone(),
-        };
 
-        let mut log = SimpleLog::default();
-
-        handle_git_command(
-            &["fetch", "origin"],
-            "fetching latest changes",
-            &mut log,
-            &repo,
-        )?;
-        handle_git_command(
-            &["checkout", &repo.main_branch],
-            "checking out main branch",
-            &mut log,
-            &repo,
-        )?;
-        handle_git_command(
-            &["rebase", &format!("origin/{}", &repo.main_branch)],
-            "rebasing onto latest changes",
-            &mut log,
-            &repo,
-        )?;
-        handle_command(&hook.script, "running hook", &mut log, &repo)?;
 
         Ok(())
     }
@@ -313,6 +300,48 @@ impl Endpoint<()> for Route {
     }
 }
 
+pub struct PushEvent {
+    hook: HookConfig,
+    content: GithubPushEvent,
+}
+
+pub enum Event {
+    Done,
+    PushEvent(PushEvent),
+}
+
+fn update_and_run_hook(hook: &HookConfig) -> Result<(), RouteError> {
+    let git = "git";
+    let repo = GitRepository {
+        repo_dir: hook.repository_directory.clone(),
+        git: git.into(),
+        main_branch: hook.branch.clone(),
+    };
+
+    let mut log = SimpleLog::default();
+
+    handle_git_command(
+        &["fetch", "origin"],
+        "fetching latest changes",
+        &mut log,
+        &repo,
+    )?;
+    handle_git_command(
+        &["checkout", &repo.main_branch],
+        "checking out main branch",
+        &mut log,
+        &repo,
+    )?;
+    handle_git_command(
+        &["rebase", &format!("origin/{}", &repo.main_branch)],
+        "rebasing onto latest changes",
+        &mut log,
+        &repo,
+    )?;
+    handle_command(&hook.script, "running hook", &mut log, &repo)?;
+    Ok(())
+}
+
 #[async_std::main]
 async fn main() -> tide::Result<()> {
     let config_file = std::env::args().nth(1).expect("no config argument");
@@ -330,15 +359,39 @@ async fn main() -> tide::Result<()> {
     // TODO: Consolidate repos with the same route - they should be OK
     //       we can differentiate them based on what github returns in the
     //       webhook.
+    let (send, recv) = std::sync::mpsc::channel::<Event>();
 
     let mut routes: BTreeMap<String, Route> = BTreeMap::new();
 
     for hook in config.hooks {
         routes
             .entry(hook.hook_route.clone())
-            .or_insert_with(|| Route::new(hook.hook_route.clone()))
+            .or_insert_with(|| Route::new(hook.hook_route.clone(), send.clone()))
             .add_hook(hook);
     }
+
+    let h = std::thread::spawn(
+        move || {
+            loop {
+                match recv.recv().unwrap() {
+                    Event::Done => break,
+                    Event::PushEvent(event) => {
+                        // TODO: We should check the state for this entry in the DB
+                        println!("Processing event {}", event.db_id);
+                        println!("{:?}", event.content);
+                        match update_and_run_hook(&event.hook) {
+                            Ok(()) => {}
+                            Err(e) => {
+                                eprintln!("Error running hook {}: {:?}", event.hook.name, e);
+                            }
+                        }
+                        // TODO: We should update the state for this entry in the DB
+                    }
+                }
+            }
+            Ok::<(), std::io::Error>(())
+        }
+    );
 
     let mut app = tide::new();
     for (_, route) in routes {
@@ -347,5 +400,10 @@ async fn main() -> tide::Result<()> {
     }
 
     app.listen("0.0.0.0:8081").await?;
+
+    send.send(Event::Done)?;
+
+    h.join().unwrap().unwrap();
+
     Ok(())
 }
