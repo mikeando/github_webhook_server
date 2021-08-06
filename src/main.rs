@@ -11,8 +11,8 @@ use tide::StatusCode;
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 
-use std::sync::Mutex;
 use std::sync::mpsc;
+use std::sync::Mutex;
 
 use crate::git::GitRepository;
 use crate::github::GithubPushEvent;
@@ -267,18 +267,17 @@ impl Route {
             return Err(RouteError::AuthenticationError(e));
         }
 
-        self.channel.lock().map_err(|_e| RouteError::ChannelError)?
-            .send(
-                Event::PushEvent( PushEvent{
-                    hook: hook.clone(),
-                    content: v
-                })
-            ).map_err(|_e| RouteError::ChannelError)?;
+        self.channel
+            .lock()
+            .map_err(|_e| RouteError::ChannelError)?
+            .send(Event::PushEvent(PushEvent {
+                hook: hook.clone(),
+                content: v,
+            }))
+            .map_err(|_e| RouteError::ChannelError)?;
 
         // TODO: Validate that this event is for the repository we care about
         //       and the branches we care about.
-
-
 
         Ok(())
     }
@@ -370,25 +369,23 @@ async fn main() -> tide::Result<()> {
             .add_hook(hook);
     }
 
-    let h = std::thread::spawn(
-        move || {
-            loop {
-                match recv.recv().unwrap() {
-                    Event::Done => break,
-                    Event::PushEvent(event) => {
-                        println!("{:?}", event.content);
-                        match update_and_run_hook(&event.hook) {
-                            Ok(()) => {}
-                            Err(e) => {
-                                eprintln!("Error running hook {}: {:?}", event.hook.name, e);
-                            }
+    let h = std::thread::spawn(move || {
+        loop {
+            match recv.recv().unwrap() {
+                Event::Done => break,
+                Event::PushEvent(event) => {
+                    println!("{:?}", event.content);
+                    match update_and_run_hook(&event.hook) {
+                        Ok(()) => {}
+                        Err(e) => {
+                            eprintln!("Error running hook {}: {:?}", event.hook.name, e);
                         }
                     }
                 }
             }
-            Ok::<(), std::io::Error>(())
         }
-    );
+        Ok::<(), std::io::Error>(())
+    });
 
     let mut app = tide::new();
     for (_, route) in routes {
