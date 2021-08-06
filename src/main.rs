@@ -376,7 +376,6 @@ async fn main() -> tide::Result<()> {
                 match recv.recv().unwrap() {
                     Event::Done => break,
                     Event::PushEvent(event) => {
-                        // TODO: We should check the state for this entry in the DB
                         println!("Processing event {}", event.db_id);
                         println!("{:?}", event.content);
                         match update_and_run_hook(&event.hook) {
@@ -385,7 +384,6 @@ async fn main() -> tide::Result<()> {
                                 eprintln!("Error running hook {}: {:?}", event.hook.name, e);
                             }
                         }
-                        // TODO: We should update the state for this entry in the DB
                     }
                 }
             }
