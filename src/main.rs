@@ -376,7 +376,6 @@ async fn main() -> tide::Result<()> {
                 match recv.recv().unwrap() {
                     Event::Done => break,
                     Event::PushEvent(event) => {
-                        println!("Processing event {}", event.db_id);
                         println!("{:?}", event.content);
                         match update_and_run_hook(&event.hook) {
                             Ok(()) => {}
