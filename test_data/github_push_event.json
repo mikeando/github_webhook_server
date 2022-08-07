@@ -60,6 +60,7 @@
   },
   "ref": "refs/heads/main",
   "repository": {
+    "allow_forking": true,
     "archive_url": "https://api.github.com/repos/someone/somerepo/{archive_format}{/ref}",
     "archived": false,
     "assignees_url": "https://api.github.com/repos/someone/somerepo/assignees{/user}",
@@ -97,6 +98,7 @@
     "hooks_url": "https://api.github.com/repos/someone/somerepo/hooks",
     "html_url": "https://github.com/someone/somerepo",
     "id": 12345678,
+    "is_template": false,
     "issue_comment_url": "https://api.github.com/repos/someone/somerepo/issues/comments{/number}",
     "issue_events_url": "https://api.github.com/repos/someone/somerepo/issues/events{/number}",
     "issues_url": "https://api.github.com/repos/someone/somerepo/issues{/number}",
@@ -151,11 +153,14 @@
     "svn_url": "https://github.com/someone/somerepo",
     "tags_url": "https://api.github.com/repos/someone/somerepo/tags",
     "teams_url": "https://api.github.com/repos/someone/somerepo/teams",
+    "topics": [],
     "trees_url": "https://api.github.com/repos/someone/somerepo/git/trees{/sha}",
     "updated_at": "2021-06-13T02:00:15Z",
     "url": "https://github.com/someone/somerepo",
+    "visibility": "private",
     "watchers": 0,
-    "watchers_count": 0
+    "watchers_count": 0,
+    "web_commit_signoff_required": false
   },
   "sender": {
     "avatar_url": "https://avatars.githubusercontent.com/u/46179?v=4",

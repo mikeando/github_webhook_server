@@ -39,6 +39,7 @@ pub struct GitHubCommit {
 #[derive(Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct GitHubRepository {
+    pub allow_forking: bool,
     pub archive_url: GitHubURL,
     pub archived: bool,
     pub assignees_url: GitHubURL,
@@ -76,6 +77,7 @@ pub struct GitHubRepository {
     pub hooks_url: GitHubURL,
     pub html_url: GitHubURL,
     pub id: u64,
+    pub is_template: bool,
     pub issue_comment_url: GitHubURL,
     pub issue_events_url: GitHubURL,
     pub issues_url: GitHubURL,
@@ -109,11 +111,14 @@ pub struct GitHubRepository {
     pub svn_url: GitHubURL,
     pub tags_url: GitHubURL,
     pub teams_url: GitHubURL,
+    pub topics: Vec<String>,
     pub trees_url: GitHubURL,
     pub updated_at: String,
     pub url: GitHubURL,
+    pub visibility: String,
     pub watchers: usize,
     pub watchers_count: usize,
+    pub web_commit_signoff_required: bool,
 }
 
 #[derive(Deserialize, Debug)]
